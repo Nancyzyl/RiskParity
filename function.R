@@ -65,7 +65,30 @@ RunSum <- function (x, n = 10) {
   reclass(result, x)
 }
 
-Covariance <- function(data, days.calculate, days.covariance){
+Covariance <- function(data, days.calculate, days.covariance, kcovariance = 1){
   trade.date <- rownames(data)
   ind <- which(data == days.calculate)
+  data.cal <- data[(ind - days.covariance - kcovariance + 2):ind, ]
+  data.cal <- na.omit(apply(data.cal, 2, RunSum, n = kcovariance))
+  covariance <- cov(data.cal)
+  return(covariance)
 }
+
+OptWeightPy <- function(covariance){
+  write.csv(covariance, 'cov.csv', row.names = F)
+  ###调用PYTHON
+  return()
+}
+
+VolatilityMonitor <- function(data, date.calculate, weights, days.monitor, target.vol){
+  trade.date <- rownames(data)
+  ind <- which(data == days.calculate)
+  real.vol <- sd(data[(ind - days.monitor + 1):ind, ] %*% weights)
+  if(real.vol > target.vol){
+    weights <- weights * target.vol / real.vol
+  }
+  return(weights)
+}
+
+
+Perfo
