@@ -1,16 +1,16 @@
 #####
 Adjust <- function(x, t){
   if (abs(x) >= t){
-    x <- t
+    x <- sign(x) * t
   } else {
     x <- x
   }
   return(x)
 }
 
-SharpeRatio <- function(data, days.calculate, days.return, days.volatility){
+SharpeRatio <- function(data, date.calculate, days.return, days.volatility){
   trade.date <- rownames(data)
-  ind <- which(data == days.calculate)
+  ind <- which(trade.date == date.calculate)
   num.temp <- apply(data[(ind - days.return + 1):ind, ], 2, sum)
   den.temp <- apply(data[(ind - days.volatility + 1):ind, ], 2, sd) * sqrt(days.return)
   sharperatio <- num.temp / den.temp
@@ -18,23 +18,33 @@ SharpeRatio <- function(data, days.calculate, days.return, days.volatility){
   return(sharperatio)
 }
 
-Signal <- function(data, days.calculate, time.period, time.volatility){
-  ksiganl <- length(time.period)
+Signal <- function(data, date.calculate, time.period, time.volatility){
+  ksignal <- length(time.period)
   sharperatio <- NULL
   for(i in 1:ksignal){
-    sharperatio <- rbind(sharperatio, SharpeRatio(data, days.calculate, 
+    sharperatio <- rbind(sharperatio, SharpeRatio(data, date.calculate, 
                                                   days.return = time.period[i],
                                                   days.volatility = time.volatility[i])
                          )
-    signal <- apply(sharperatio, 2, mean)
-    signal <- apply(as.matrix(signal), 1, Adjust, t = 1)
-    return(siganl)
   }
-  
+  signal <- apply(sharperatio, 2, mean)
+  signal <- apply(as.matrix(signal), 1, Adjust, t = 1)
+  return(signal)
 }
 
-## n=1时还没改
-RunSum <- function (x, n = 10) {
+SignalAdjust <- function(signal, module = 1){
+  signal.adjust <- matrix(NA, ncol = ncol(signal), nrow = nrow(signal))
+  if(module == 1){
+    signal.adjust[1, ] <- signal[1, ]
+    signal.adjust[-1, ] <- signal[-1, ] * 0.95 + signal[-nrow(signal), ] * 0.05
+  } else {
+    signal.adjust <- sign(signal)
+    signal.adjust[-1, ][sign(signal)[-1, ] * sign(signal)[-nrow(signal), ] == -1] <- 0
+  }
+  return(signal.adjust)
+}
+
+RunSum <- function (x, n = 10, cumulative = FALSE) {
   x <- try.xts(x, error = as.matrix)
   if (n < 1 || n > NROW(x)) 
     stop("Invalid 'n'")
@@ -61,34 +71,68 @@ RunSum <- function (x, n = 10) {
                        loa = as.integer(len), PACKAGE = "TTR", DUP = TRUE)$oa
     result <- c(rep(NA, NAs), result)
   }
-  is.na(result) <- c(1:(n - 1 + NAs))
+  is.na(result) <- c(min(1, (n - 1 + NAs)):(n - 1 + NAs))
   reclass(result, x)
 }
 
-Covariance <- function(data, days.calculate, days.covariance, kcovariance = 1){
+Covariance <- function(data, date.calculate, days.covariance, kcovariance = 1){
   trade.date <- rownames(data)
-  ind <- which(data == days.calculate)
+  ind <- which(trade.date == date.calculate)
   data.cal <- data[(ind - days.covariance - kcovariance + 2):ind, ]
   data.cal <- na.omit(apply(data.cal, 2, RunSum, n = kcovariance))
   covariance <- cov(data.cal)
   return(covariance)
 }
 
+VolWeight <- function(data, date.calculate, days.vol){
+  trade.date <- rownames(data)
+  ind <- which(trade.date == date.calculate)
+  weight <- 0.02 / apply(data[(ind - days.vol + 1):ind, ], 2, sd)
+  return(weight)
+}
+
+# covariance = Covariance(data, date.calculate, 60)
 OptWeightPy <- function(covariance){
   write.csv(covariance, 'cov.csv', row.names = F)
   ###调用PYTHON
-  return()
+  ans <- py_run_file('1.py')
+  weights <- as.vector(ans$a)
+  return(weights)
 }
 
 VolatilityMonitor <- function(data, date.calculate, weights, days.monitor, target.vol){
   trade.date <- rownames(data)
-  ind <- which(data == days.calculate)
-  real.vol <- sd(data[(ind - days.monitor + 1):ind, ] %*% weights)
+  ind <- which(trade.date == date.calculate)
+  real.vol <- sd(as.matrix(data[(ind - days.monitor + 1):ind, ]) %*% weights)
+  print(real.vol)
   if(real.vol > target.vol){
     weights <- weights * target.vol / real.vol
   }
   return(weights)
 }
 
+TradeCost <- function(weights, catecosts){
+  netposition <- weights - rbind(rep(0, ncol(weights)), weights[-nrow(weights), ])
+  costs <- netposition %*% catecosts
+  return(costs)
+}
 
-Perfo
+PerformEva <- function(return){
+  # return: 每日收益率
+  max.value <- NULL
+  net.value <- cumprod(1 + return)
+  for(i in 1:(length(return) - 1)) {
+    max.value[i] <- net.value[i + 1] / max(net.value[1:(i + 1)]) - 1
+  }
+  max.drawback <- -min(max.value)
+  # 算法1：每日收益率取平均
+  # return.annually <- mean(return) * 240
+  # 算法2：最后一个交易日的净值求年化
+  return.annually <- (net.value[length(net.value)] - net.value[1]) / length(return) * 240
+  vol.annually <- sd(return) * sqrt(240)
+  sharperatio <- return.annually / vol.annually
+  calmarratio <- return.annually / max.drawback
+  return(list(net.value = net.value, max.value = max.value,
+              return.annually = return.annually, max.drawback = max.drawback, 
+              vol.annually = vol.annually, sharperatio = sharperatio, calmarratio = calmarratio))
+}
