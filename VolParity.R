@@ -1,9 +1,9 @@
 library(zoo)
 library(xts)
 library(TTR)
-setwd('/Users/bitwjg/Desktop')
+
 logreturn <- read.csv("logreturn.csv")
-rownames(logreturn) <- logreturn[, 1]
+rownames(logreturn) <- logreturn[, 1] 
 logreturn <- logreturn[, -1]
 logreturn <- logreturn[-1, ] - logreturn[-(nrow(logreturn)), ]
 #return <- exp(logreturn) - 1
@@ -18,7 +18,6 @@ riskbudget <- riskbudget[, 1]
 # riskbudget <- drop(as.matrix(riskbudget))
 parameter <- read.csv('ParaVol.csv')
 
-perform <- NULL
 VolParity <- function(logdata, riskbudget, parameter, costs = rep(0.0001, 40)){
   attach(parameter)
   data <- exp(logdata) - 1
@@ -26,7 +25,6 @@ VolParity <- function(logdata, riskbudget, parameter, costs = rep(0.0001, 40)){
   time.period <- c(time.period1, time.period2, time.period3)
   signal <- weight.ts <- NULL
   for(i in time.period3:nrow(logdata)){
-    print(i)
     signal <- rbind(signal, Signal(data = logdata,
                                    date.calculate = trade.date[i],
                                    time.period = time.period,
@@ -54,6 +52,7 @@ VolParity <- function(logdata, riskbudget, parameter, costs = rep(0.0001, 40)){
               returns = returns, performance = performance))
 }
 
+perform <- NULL
 for(k in 1:nrow(parameter)){
   ans <- VolParity(logdata = logreturn, riskbudget = riskbudget, parameter = parameter[k, ])
   logsum <- cumsum(log(ans$returns + 1))
