@@ -31,7 +31,7 @@ VolParity <- function(logdata, riskbudget, parameter, costs = rep(0.0001, 40)){
                                    time.volatility = rep(time.period3, 3))
                     )
   }
-  signal.adjust <- SignalAdjust(signal = signal)
+  signal.adjust <- SignalAdjust(signal = signal, module = 2)
   for(i in time.period3:nrow(logdata)){
     optweight <- VolWeight(data = logdata, date.calculate = trade.date[i], days.vol) 
    # weight.ts <- rbind(weight.ts, optweight)
