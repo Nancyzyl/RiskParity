@@ -29,7 +29,7 @@ SharpeRatio <- function(data, date.calculate, days.return, days.volatility){
 }
 
 ## 计算信号 ##
-Signal <- function(data, date.calculate, time.period, time.volatility){
+SignalSR <- function(data, date.calculate, time.period, time.volatility){
   # time.period: days.return的集合
   # time.volatility:days.volatility的集合
   ksignal <- length(time.period)
@@ -45,14 +45,26 @@ Signal <- function(data, date.calculate, time.period, time.volatility){
   return(signal)
 }
 
+SignalMA <- function(data, date.calculate, time.period){
+  trade.date <- rownames(data)
+  # 定位所计算日期在data中的位置
+  ind <- which(trade.date == date.calculate)
+  ksignal <- length(time.period)
+  mean.average <- NULL
+  for(i in 1:ksignal){
+    mean.average <- rbind(mean.average, sign(data[ind, ] - apply(data[(ind - time.period[i] + 1):ind, ], 2, mean)))
+  }
+  signal <- apply(mean.average, 2, sum)
+  return(signal)
+}
 ## 调整信号 ##
 # module = 1 则为指数平滑
 # module !=1 则为{-1, 0, 1}三个信号
-SignalAdjust <- function(signal, module = 1){
+SignalSPAdjust <- function(signal, module = 1){
   signal.adjust <- matrix(NA, ncol = ncol(signal), nrow = nrow(signal))
   if(module == 1){
     signal.adjust[1, ] <- signal[1, ]
-    signal.adjust[-1, ] <- signal[-1, ] * 0.95 + signal[-nrow(signal), ] * 0.05
+    signal.adjust[-1, ] <- na.omit(EMA(signal, n = 2))
   } else {
     signal.adjust <- sign(signal)
     signal.adjust[-1, ][sign(signal)[-1, ] * sign(signal)[-nrow(signal), ] == -1] <- 0
@@ -110,7 +122,8 @@ VolWeight <- function(data, date.calculate, days.vol){
   # days.vol:计算过去多少个交易日的波动率
   trade.date <- rownames(data)
   ind <- which(trade.date == date.calculate)
-  weight <- 0.02 / apply(data[(ind - days.vol + 1):ind, ], 2, sd)
+  weight <- 0.01 / apply(data[(ind - days.vol + 1):ind, ], 2, sd) / sqrt(240)
+  weight[weight == Inf] <- 0
   return(weight)
 }
 
@@ -131,9 +144,8 @@ VolatilityMonitor <- function(data, date.calculate, weights, days.monitor, targe
   ind <- which(trade.date == date.calculate)
   # 以当天计算得到的权重，计算过去N天的波动率
   real.vol <- sd(as.matrix(data[(ind - days.monitor + 1):ind, ]) %*% weights)
-  if(real.vol > target.vol){
-    weights <- weights * target.vol / real.vol
-  }
+  weights <- weights * target.vol / real.vol
+  print(real.vol)
   return(weights)
 }
 
@@ -142,24 +154,25 @@ TradeCost <- function(weights, catecosts){
   # catecosts:每品种大约的交易成本比例，包括佣金和滑点
   # 计算头寸的改变
   netposition <- abs(weights - rbind(rep(0, ncol(weights)), weights[-nrow(weights), ]))
-  costs <- netposition %*% catecosts
+  costs <- t(t(netposition) * catecosts)
   return(costs)
 }
 
 ## 绩效评估 ##
-PerformEva <- function(return){
+PerformEva <- function(returns){
   # return: 每日收益率序列
   max.value <- NULL
-  net.value <- cumprod(1 + return)
-  for(i in 1:(length(return) - 1)) {
+  net.value <- cumprod(1 + returns)
+  for(i in 1:(length(returns) - 1)) {
     max.value[i] <- net.value[i + 1] / max(net.value[1:(i + 1)]) - 1
   }
   max.drawback <- -min(max.value)
+  logreturn <- log(net.value[-1] / net.value[-length(net.value)])
   # 算法1：每日收益率取平均
-  # return.annually <- mean(return) * 240
+  return.annually <- mean(logreturn) * 240
   # 算法2：最后一个交易日的净值求年化
-  return.annually <- (net.value[length(net.value)] - net.value[1]) / length(return) * 240
-  vol.annually <- sd(return) * sqrt(240)
+  # return.annually <- (net.value[length(net.value)] - net.value[1]) / length(return) * 240
+  vol.annually <- sd(logreturn) * sqrt(240)
   sharperatio <- return.annually / vol.annually
   calmarratio <- return.annually / max.drawback
   return(list(net.value = net.value, max.value = max.value,
